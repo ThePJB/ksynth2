@@ -2,6 +2,7 @@ use crate::audio::*;
 use crate::kapp::*;
 use crate::kmath::*;
 use crate::widgets::*;
+use std::collections::HashMap;
 
 pub struct VSliders {
         n: FloatSlider,
@@ -48,7 +49,7 @@ impl Default for VSliders {
 }
 
 impl VSliders {
-    fn get_sd(&self, f: f32, release: bool) -> SoundDesc {
+    fn get_sd(&self, f: f32) -> SoundDesc {
         SoundDesc {
             f,
             n: self.n.curr(),
@@ -65,7 +66,6 @@ impl VSliders {
             cdt: self.cdt.curr(),
             cdr: self.cdr.curr(),
             aout: self.aout.curr(),
-            release,
         }
     }
 }
@@ -75,7 +75,8 @@ pub struct SynthGUI {
 
     history: Vec<(usize, f32, f32)>,
 
-    t_press: [Option<f32>; 28],
+    held_keys: HashMap<u32, (f32, SoundDesc)>,
+    times_pressed: [u32; 28],
 }
 
 impl Default for SynthGUI {
@@ -83,7 +84,8 @@ impl Default for SynthGUI {
         SynthGUI {
             sliders: VSliders::default(),
             history: Vec::new(),
-            t_press: [None; 28],
+            held_keys: HashMap::new(),
+            times_pressed: [0; 28],
         }
     }
 }
@@ -134,33 +136,27 @@ impl SynthGUI {
         let pressed_keys = inputs.curr_keys.difference(&inputs.prev_keys);
         for k in pressed_keys {
             if let Some(note) = kc_to_note(*k) {
-                self.t_press[note] = Some(inputs.t as f32);
-                
+                self.times_pressed[note] += 1;
+                let uid = (31249577 + self.times_pressed[note]) * khash(12312577 * note as u32);
                 let f = 110.0 * 2.0f32.powf(note as f32/12.0);
+                let sd = self.sliders.get_sd(f);
+                self.held_keys.insert(uid, (inputs.t, sd));
                 outputs.sounds.push(
-                    SoundCommand {
-                        id: note as u32,
-                        sd: self.sliders.get_sd(f, false),
-                    }
+                    AudioCommand::PlayHold(uid as u64, sd)
                 )
             }
         }
         let released_keys = inputs.prev_keys.difference(&inputs.curr_keys);
         for k in released_keys {
             if let Some(note) = kc_to_note(*k) {
-                let t_start = self.t_press[note].unwrap();
-                let t_end = inputs.t as f32;
-                self.t_press[note] = None;
-
-                self.history.push((note, t_start, t_end));
-
-                let f = 110.0 * 2.0f32.powf(note as f32/12.0);
-                outputs.sounds.push(
-                    SoundCommand {
-                        id: note as u32,
-                        sd: self.sliders.get_sd(f, true),
-                    }
-                )
+                let uid = (31249577 + self.times_pressed[note]) * khash(12312577 * note as u32);
+                if let Some((t_start, sd)) = self.held_keys.remove(&uid) {
+                    let t_end = inputs.t as f32;
+                    self.history.push((note, t_start, t_end));
+                    outputs.sounds.push(
+                        AudioCommand::Release(uid as u64)
+                    )
+                }
             }
         }
 
@@ -217,19 +213,23 @@ impl SynthGUI {
                     }
                 }
 
-                if let Some(start) = self.t_press[row as usize] {
-                    let end = inputs.t;
-                    let r = r.child(1.0 - (inputs.t as f32 - start) / 10.0, 0.0, (end - start) / 10.0, 1.0);
+                // if let Some(start) = self.t_press[row as usize] {
+                //     let end = inputs.t;
+                //     let r = r.child(1.0 - (inputs.t as f32 - start) / 10.0, 0.0, (end - start) / 10.0, 1.0);
 
-                        let h = 90.0 * (row / 7) as f32;
-                        let s = 1.0 - (row % 7) as f32 / 12.0;
-                        let v = 1.0;
+                //         let h = 90.0 * (row / 7) as f32;
+                //         let s = 1.0 - (row % 7) as f32 / 12.0;
+                //         let v = 1.0;
 
-                        let c = Vec4::new(h, s, v, 1.0).hsv_to_rgb();
-                        outputs.canvas.put_rect(r, 1.2, c);
-                }
+                //         let c = Vec4::new(h, s, v, 1.0).hsv_to_rgb();
+                //         outputs.canvas.put_rect(r, 1.2, c);
+                // }
 
             }
         }
     }
 }
+
+// yes plot with adsr
+// uh how to plot currently held, guess by them instead of by row
+// yea cause thats dum

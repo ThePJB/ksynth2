@@ -1,5 +1,16 @@
 use crate::kmath::*;
 
+
+// Audio system
+// PlayHold (UID, sd)
+// Release (UID)
+
+#[derive(Debug, Clone, Copy)]
+pub enum AudioCommand {
+    PlayHold(u64, SoundDesc),
+    Release(u64),
+}
+
 pub fn db_to_vol(db: f32) -> f32 {
     10.0f32.powf(0.05 * db)
 }
@@ -25,38 +36,35 @@ pub struct SoundDesc {
     pub cdt: f32,
     pub cdr: f32,
     pub aout: f32,
-    pub release: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct SoundCommand {
-    pub sd: SoundDesc,
-    pub id: u32,
-}
+
 
 pub struct Channel {
     pub sd: SoundDesc,
-    pub age: f32,
+    pub birth: u64,
+    pub age: u64,
+    pub release_time: Option<u64>,
     pub phases: Vec<f32>,
-    pub id: u32,
+    pub id: u64,
 }
 
 impl Channel {
     pub fn tick(&mut self) -> f32 {
-        self.age += 1.0 / 44100.0;
+        self.age += 1;
 
         let sd = self.sd;
 
         let voices_len = sd.voices.floor() as usize;
         let n_len = sd.n.floor() as usize;
-        self.phases.resize(voices_len*n_len, 0.0);  // or resize with random phases, is better
+        self.phases.resize(voices_len*n_len, 0.0);  // or resize with random phases, is better  // uh y
 
         // pre compression
         let mut acc = 0.0;
 
         let a_vol = db_to_vol(sd.amp);
 
-        let a_env = 1.0;
+        let a_env = env_amplitude(self.sd.ea, self.sd.ed, self.sd.es, self.sd.er, self.age, 44100, self.release_time.map(|x| x - self.birth));
 
         let a_voices = 1.0 / voices_len as f32;
 
@@ -98,10 +106,6 @@ impl Channel {
             out
         }
     }
-
-    pub fn should_remove(&self) -> bool {
-        self.sd.release && self.age > self.sd.er
-    }
 }
 
 #[derive(Default)]
@@ -111,26 +115,31 @@ pub struct Mixer {
 }
 
 impl Mixer {
-    pub fn handle_command(&mut self, sc: SoundCommand) {
-        println!("handle command {:?}", sc);
-        for i in 0..self.channels.len() {
-            // if its already playing we may want to blend
-            if self.channels[i].id == sc.id {
+    // We assume only one playing at a time and unique
+    pub fn handle_command(&mut self, com: AudioCommand) {
+        println!("handle command {:?}", com);
 
-                self.channels[i].sd = sc.sd;
-
-                self.channels[i].age = 0.0;
-                return;
-            }
+        match com {
+            AudioCommand::PlayHold(id, sd) => {
+                let voices_len = sd.voices.floor() as usize;
+                let n_len = sd.n.floor() as usize;
+                self.channels.push(Channel {
+                    sd,
+                    id,
+                    age: 0,
+                    birth: self.sample_count,
+                    phases: vec![0.0; voices_len*n_len], // todo preallocate max phases for detune
+                    release_time: None,
+                })
+            },
+            AudioCommand::Release(id) => {
+                for i in 0..self.channels.len() {
+                    if self.channels[i].id == id {
+                        self.channels[i].release_time = Some(self.sample_count);
+                    }
+                }
+            },
         }
-        let voices_len = sc.sd.voices.floor() as usize;
-        let n_len = sc.sd.n.floor() as usize;
-        self.channels.push(Channel {
-            sd: sc.sd,
-            id: sc.id,
-            age: 0.0,
-            phases: vec![0.0; voices_len*n_len], // todo preallocate max phases for detune
-        });
     }
 
     pub fn tick(&mut self) -> f32 {
@@ -142,10 +151,14 @@ impl Mixer {
         let mut acc = 0.0;
         loop {
             acc += self.channels[i].tick();
-            
-            if self.channels[i].should_remove() { 
-                println!("removing {}", i);
-                self.channels.swap_remove(i);
+            if let Some(release_time) = self.channels[i].release_time {
+                let n = self.channels[i].age;
+                let n_since_release = n - release_time + self.channels[i].birth;
+                if n_since_release > (self.channels[i].sd.er * 44100.0) as u64 {
+                    println!("removing {}, n since release {}, release samples: {}, n {} releasetime {}", i, n_since_release, (self.channels[i].sd.er * 44100.0) as u64, n, release_time);
+                    self.channels.swap_remove(i);
+
+                }
             }
 
             if i == 0 { break; }
@@ -157,23 +170,23 @@ impl Mixer {
 
 
 
-// pub fn env_amplitude(a: f32, d: f32, s: f32, r: f32, curr_sample: u32, sample_rate: u32, released_sample: Option<u32>) -> f32 {
-//     // +1 for useful recursion
-//     let A = self.a * sample_rate as f32;
-//     let D = self.d * sample_rate as f32;
-//     let S = self.s;
-//     let R = self.r * sample_rate as f32;
+pub fn env_amplitude(a: f32, d: f32, s: f32, r: f32, curr_sample: u64, sample_rate: u64, released_sample: Option<u64>) -> f32 {
+    // +1 for useful recursion
+    let A = a * sample_rate as f32;
+    let D = d * sample_rate as f32;
+    let S = s;
+    let R = r * sample_rate as f32;
 
-//     if let Some(released_on) = released_sample {
-//         let num_released = curr_sample - released_on;
-//         let release_value = self.amplitude(released_on, sample_rate, None);
-//         return lerp(release_value, 0.0, num_released as f32 / R).max(0.0);
-//     }
-//     if curr_sample as f32 <= A {
-//         return lerp(0.0, 1.0, curr_sample as f32 / A);
-//     }
-//     if curr_sample as f32 <= D + A {
-//         return lerp(1.0, S, (curr_sample as f32 - A)/D);
-//     }
-//     S
-// }
+    if let Some(released_on) = released_sample {
+        let num_released = curr_sample - released_on;
+        let release_value = env_amplitude(a, d, s, r, released_on, sample_rate, None);
+        return lerp(release_value, 0.0, num_released as f32 / R).max(0.0);
+    }
+    if curr_sample as f32 <= A {
+        return lerp(0.0, 1.0, curr_sample as f32 / A);
+    }
+    if curr_sample as f32 <= D + A {
+        return lerp(1.0, S, (curr_sample as f32 - A)/D);
+    }
+    S
+}

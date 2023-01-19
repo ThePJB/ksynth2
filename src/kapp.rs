@@ -90,7 +90,7 @@ pub struct FrameOutputs {
     pub set_texture: Vec<(TextureBuffer, usize)>,
     pub draw_texture: Vec<(Rect, usize)>,
     pub glyphs: GlyphBuffer,
-    pub sounds: Vec<SoundCommand>,
+    pub sounds: Vec<AudioCommand>,
 }
 
 impl FrameOutputs {
@@ -110,7 +110,7 @@ pub struct Application {
     root_scene: SynthGUI,
 
     audio_stream: Stream,
-    channel: Producer<SoundCommand>,
+    channel: Producer<AudioCommand>,
 
     t_last: Instant,
     instant_mouse_pos: Vec2,
@@ -124,7 +124,7 @@ impl Application {
     
         let video = Video::new("ksynth2", xres as f32, yres as f32, event_loop);
 
-        let rb = RingBuffer::<SoundCommand>::new(5);
+        let rb = RingBuffer::<AudioCommand>::new(5);
         let (mut prod, mut cons) = rb.split();
         
         let app = Application {
@@ -274,10 +274,10 @@ pub struct SampleRequestOptions {
 
     pub mixer: Mixer,
 
-    pub channel: Consumer<SoundCommand>,
+    pub channel: Consumer<AudioCommand>,
 }
 
-pub fn stream_setup_for<F>(on_sample: F, channel: Consumer<SoundCommand>) -> Result<cpal::Stream, anyhow::Error>
+pub fn stream_setup_for<F>(on_sample: F, channel: Consumer<AudioCommand>) -> Result<cpal::Stream, anyhow::Error>
 where
     F: FnMut(&mut SampleRequestOptions) -> f32 + std::marker::Send + 'static + Copy,
 {
@@ -309,7 +309,7 @@ pub fn stream_make<T, F>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     on_sample: F,
-    channel: Consumer<SoundCommand>,
+    channel: Consumer<AudioCommand>,
 ) -> Result<cpal::Stream, anyhow::Error>
 where
     T: cpal::Sample,
