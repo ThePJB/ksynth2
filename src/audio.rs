@@ -86,8 +86,11 @@ impl Channel {
         // now do compression
         // change db value or amplitude value?
         let comp = {
-            let cut_vol = db_to_vol(sd.cut);
-            let cdt_vol = db_to_vol(sd.cdt);
+            let cut_vol = sd.cut;
+            let cdt_vol = sd.cdt;
+
+            // let cut_vol = db_to_vol(sd.cut);
+            // let cdt_vol = db_to_vol(sd.cdt);
             if acc < cut_vol {
                 let gain = lerp(sd.cur, 1.0, (sd.cur - acc)/sd.cur);
                 gain * acc

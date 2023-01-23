@@ -149,7 +149,7 @@ impl SimpleCanvas {
         self.put_triangle(r.tl(), r.tr(), r.bl(), depth, colour);
         self.put_triangle(r.bl(), r.tr(), r.br(), depth, colour);
     }
-    
+
     pub fn put_quad(&mut self, a: Vec2, b: Vec2, c: Vec2, d: Vec2, depth: f32, colour: Vec4) {
         self.put_triangle(a,b,c, depth, colour);
         self.put_triangle(b,d,c, depth, colour);
@@ -159,5 +159,38 @@ impl SimpleCanvas {
         let v = (b - a).normalize();
         let wv = w/2.0 * Vec2::new(-v.y, v.x);
         self.put_quad(a + wv, b + wv, a - wv, b - wv, depth, colour);
+    }
+
+    pub fn put_poly(&mut self, center: Vec2, radius: f32, n_sides: i32, depth: f32, colour: Vec4) {
+        for i in 0..n_sides {
+            let theta_1 = i as f32 * 2.0 * std::f32::consts::PI / n_sides as f32;
+            let theta_2 = (i+1) as f32 * 2.0 * std::f32::consts::PI / n_sides as f32;
+            self.put_triangle(center, center.offset_r_theta(radius, theta_1), center.offset_r_theta(radius, theta_2), depth, colour);
+        }
+    }
+
+    pub fn put_poly_part(&mut self, center: Vec2, radius: f32, n_sides: i32, n_to_draw: i32, depth: f32, colour: Vec4) {
+        for i in (n_sides - n_to_draw)..n_sides {
+            let theta_1 = i as f32 * 2.0 * std::f32::consts::PI / n_sides as f32;
+            let theta_2 = (i+1) as f32 * 2.0 * std::f32::consts::PI / n_sides as f32;
+            self.put_triangle(center, center.offset_r_theta(radius, theta_1), center.offset_r_theta(radius, theta_2), depth, colour);
+        }
+    }
+
+    pub fn put_circle(&mut self, center: Vec2, radius: f32, depth: f32, colour: Vec4) {
+        let n_sides = (radius as f32).sqrt() * 200.0;
+        self.put_poly(center, radius, (n_sides as i32).max(6), depth, colour);
+    }
+
+    pub fn put_semicircle(&mut self, center: Vec2, radius: f32, depth: f32, colour: Vec4) {
+        let n_sides = (radius as f32).sqrt() * 200.0;
+        let n_sides = (n_sides as i32).max(6);
+        self.put_poly_part(center, radius, n_sides, n_sides/2, depth, colour);
+    }
+
+    pub fn put_vpill(&mut self, c: Vec2, w: f32, h: f32, depth: f32, colour: Vec4) {
+        self.put_rect(c.rect_centered(w, h), depth, colour);
+        self.put_circle(c + v2(0.0, -h/2.0), w/2.0, depth, colour);
+        self.put_circle(c + v2(0.0, h/2.0), w/2.0, depth, colour);
     }
 }

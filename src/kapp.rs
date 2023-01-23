@@ -9,6 +9,8 @@ use crate::audio::*;
 
 use cpal::Stream;
 use cpal::traits::*;
+use glutin::dpi::LogicalPosition;
+use glutin::window::CursorIcon;
 use ringbuf::*;
 
 use std::collections::HashSet;
@@ -20,6 +22,8 @@ use glutin::event::WindowEvent;
 use glutin::event::WindowEvent::*;
 use glutin::event::Event;
 use glutin::event_loop::*;
+use glutin::event::DeviceEvent;
+
 
 use glow::HasContext;
 
@@ -91,6 +95,8 @@ pub struct FrameOutputs {
     pub draw_texture: Vec<(Rect, usize)>,
     pub glyphs: GlyphBuffer,
     pub sounds: Vec<AudioCommand>,
+    pub plant_cursor: bool,
+    pub set_cursor: Option<usize>,  // 0 default, 1 hand
 }
 
 impl FrameOutputs {
@@ -101,6 +107,8 @@ impl FrameOutputs {
             set_texture: Vec::new(),
             draw_texture: Vec::new(),
             sounds: Vec::new(),
+            plant_cursor: false,
+            set_cursor: None,
         }
     }
 }
@@ -115,6 +123,9 @@ pub struct Application {
     t_last: Instant,
     instant_mouse_pos: Vec2,
     current: FrameInputState,
+
+    old_mouse_pos: LogicalPosition<f64>,
+    plant_cursor: bool,
 }
 
 impl Application {
@@ -131,10 +142,12 @@ impl Application {
             video,
             root_scene: SynthGUI::default(),
             t_last: Instant::now(),
+            old_mouse_pos: LogicalPosition { x: 0.0, y: 0.0 },
             instant_mouse_pos: Vec2::zero(),
             current: FrameInputState::new(xres as f32 / yres as f32),           
             audio_stream: stream_setup_for(sample_next, cons).expect("no can make stream"),
             channel: prod,
+            plant_cursor: false,
         };
         app.audio_stream.play().expect("no can play stream");
         app
@@ -144,6 +157,15 @@ impl Application {
         match event {
             Event::LoopDestroyed => self.exit(),
             Event::WindowEvent {event: WindowEvent::CloseRequested, ..} => self.exit(),
+            Event::DeviceEvent {event, .. } => match event {
+                DeviceEvent::MouseMotion{delta: (dx, dy)} => {
+                    if self.plant_cursor {
+                        self.current.mouse_pos.x -= dx as f32;
+                        self.current.mouse_pos.y -= dy as f32;
+                    }
+                },
+                _ => {},
+            },
             Event::WindowEvent {event, ..} => match event {
                 KeyboardInput { 
                     input: glutin::event::KeyboardInput { 
@@ -197,11 +219,17 @@ impl Application {
 
 
                 // Mouse motion
+                // maybe we actually need mouse device events or something
                 CursorMoved {
                     position: pos,
                     ..
                 } => {
-                    self.instant_mouse_pos = Vec2::new(pos.x as f32 / self.video.yres, pos.y as f32 / self.video.yres);
+                    if self.plant_cursor {
+                        self.video.window.window().set_cursor_position(self.old_mouse_pos).unwrap();
+                    } else {
+                        self.old_mouse_pos = pos.to_logical(self.video.window.window().scale_factor());
+                        self.instant_mouse_pos = Vec2::new(pos.x as f32 / self.video.yres, pos.y as f32 / self.video.yres);
+                    }
                 },
 
                 // Resize
@@ -233,7 +261,25 @@ impl Application {
                 self.current.rmb = match self.current.rmb {KeyStatus::JustPressed | KeyStatus::Pressed => KeyStatus::Pressed, KeyStatus::JustReleased | KeyStatus::Released => KeyStatus::Released};
 
                 let mut new_outputs = FrameOutputs::new(state.screen_rect.aspect());
+
                 self.root_scene.frame(&state, &mut new_outputs);
+
+                if self.plant_cursor && !new_outputs.plant_cursor {
+                    self.plant_cursor = false;
+                    self.video.window.window().set_cursor_visible(true);
+                } else if !self.plant_cursor && new_outputs.plant_cursor {
+                    self.plant_cursor = true;
+                    self.video.window.window().set_cursor_visible(false);
+                }
+
+                if let Some(desired_cursor) = new_outputs.set_cursor {
+                    match desired_cursor {
+                        0 => self.video.window.window().set_cursor_icon(CursorIcon::Default),
+                        1 => self.video.window.window().set_cursor_icon(CursorIcon::Hand),
+                        _ => {},
+                    }
+                }
+
                 for sc in new_outputs.sounds.iter() {
                     self.channel.push(*sc).ok().unwrap();
                 }

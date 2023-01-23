@@ -95,6 +95,9 @@ pub fn noise2d(x: f32, y: f32, seed: u32) -> f32 {
 /***************************************************
  * Vec
  ***************************************************/
+ pub fn v2(x: f32, y: f32) -> Vec2 {Vec2{x,y}}
+ pub fn v3(x: f32, y: f32, z: f32) -> Vec3 {Vec3{x,y,z}}
+ pub fn v4(x: f32, y: f32, z: f32, w: f32) -> Vec4 {Vec4{x,y,z,w}}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Vec2 {

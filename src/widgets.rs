@@ -120,3 +120,85 @@ impl FloatSlider {
         return any_change;
     }
 }
+
+pub struct Knob {
+    pub t: f32, // 0..1
+    pub sensitivity: f32,
+    pub held: bool,
+    pub label: String,
+    pub min: f32,
+    pub max: f32
+}
+
+impl Knob {
+    pub fn frame(&mut self, inputs: &FrameInputState, outputs: &mut FrameOutputs, r: Rect) -> bool {
+        let c_text = v4(1.0, 1.0, 1.0, 1.0);
+        let c_track = v4(0.4, 0.4, 0.4, 1.0);
+        let c_bg = v4(0.3, 0.3, 0.3, 1.0);
+        let c_knob = v4(1.0, 1.0, 0.0, 1.0);
+
+        let r_inner = 0.8;
+        let r_knob = 0.6;
+
+        // draw label
+        {
+            let r = r.child(0.0, 0.0, 1.0, 0.1);
+            outputs.glyphs.push_center_str(&self.label, r.x+r.w/2.0, r.y, r.h, r.h, 1.2, c_text);
+        }
+        let r = r.child(0.0, 0.1, 1.0, 0.9);
+        let r = r.fit_center_square();
+        if self.held {
+            if inputs.lmb != KeyStatus::Pressed {
+                self.held = false;
+            }
+        } else {
+            if r.contains(inputs.mouse_pos) && inputs.lmb == KeyStatus::JustPressed {
+                self.held = true;
+            }
+        }
+
+        outputs.canvas.put_semicircle(r.centroid(), r.w/2.0, 1.1, c_track);
+        outputs.canvas.put_semicircle(r.centroid(), r.w/2.0 * r_inner, 1.2, c_bg);
+        outputs.canvas.put_circle(r.centroid(), r.w/2.0 * r_knob, 1.3, c_knob);
+
+        let v = -Vec2::new_r_theta(r.w/2.0, self.t * PI);
+        let v1 = r.centroid() + v;
+        let v2 = r.centroid() + v.rotate(-PI/4.0) * r_knob;
+        let v3 = r.centroid() + v.rotate(PI/4.0) * r_knob;
+
+        outputs.canvas.put_triangle(v1, v2, v3, 1.3, c_knob);
+
+        if self.held {
+            outputs.set_cursor = Some(1);
+            // outputs.set_cursor_pos = Some(inputs.mouse_pos - inputs.mouse_delta);
+            outputs.plant_cursor = true;
+            if inputs.mouse_delta.x != 0.0 || inputs.mouse_delta.y != 0.0 {
+                self.t += inputs.mouse_delta.x * self.sensitivity;
+                self.t -= inputs.mouse_delta.y * self.sensitivity;
+                self.t = self.t.max(0.0).min(1.0);
+                return true;
+            }
+        }
+
+        if inputs.lmb != KeyStatus::Pressed {
+            outputs.set_cursor = Some(0);
+        }
+
+        return false;
+    }
+
+    pub fn curr(&self) -> f32 {
+        lerp(self.min, self.max, self.t)
+    }
+
+    pub fn new(default: f32, min: f32, max: f32, sensitivity: f32, label: &str) -> Knob {
+        Knob {
+            t: (default - min) / (max - min),
+            min, 
+            max,
+            held: false,
+            label: label.to_owned(),
+            sensitivity,
+        }
+    }
+}
