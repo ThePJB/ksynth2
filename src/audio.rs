@@ -9,6 +9,7 @@ use crate::kmath::*;
 pub enum AudioCommand {
     PlayHold(u64, SoundDesc),
     Release(u64),
+    SetVol(f32),
 }
 
 pub fn db_to_vol(db: f32) -> f32 {
@@ -35,7 +36,7 @@ pub struct SoundDesc {
     pub cur: f32,
     pub cdt: f32,
     pub cdr: f32,
-    pub aout: f32,
+    pub hard_clip: f32,
 }
 
 
@@ -86,11 +87,11 @@ impl Channel {
         // now do compression
         // change db value or amplitude value?
         let comp = {
-            let cut_vol = sd.cut;
-            let cdt_vol = sd.cdt;
+            // let cut_vol = sd.cut;
+            // let cdt_vol = sd.cdt;
 
-            // let cut_vol = db_to_vol(sd.cut);
-            // let cdt_vol = db_to_vol(sd.cdt);
+            let cut_vol = db_to_vol(sd.cut);
+            let cdt_vol = db_to_vol(sd.cdt);
             if acc < cut_vol {
                 let gain = lerp(sd.cur, 1.0, (sd.cur - acc)/sd.cur);
                 gain * acc
@@ -100,21 +101,38 @@ impl Channel {
                 acc
             }
         };
-        let out = comp * sd.aout;
-        if out > 1.0 {
-            1.0
-        } else if out < -1.0 {
-            -1.0
+        
+        let out = comp;
+
+        // Hard clip
+        let hc_vol = db_to_vol(self.sd.hard_clip);
+
+        let hclipped = if out > hc_vol {
+            hc_vol
+        } else if out < -hc_vol {
+            -hc_vol
         } else {
             out
-        }
+        };
+
+        hclipped
     }
 }
 
-#[derive(Default)]
 pub struct Mixer {
+    pub out_vol: f32,
     pub sample_count: u64,
     pub channels: Vec<Channel>,
+}
+
+impl Default for Mixer {
+    fn default() -> Self {
+        Mixer {
+            out_vol: db_to_vol(-10.0),
+            sample_count: 0,
+            channels: vec![],
+        }
+    }
 }
 
 impl Mixer {
@@ -142,6 +160,7 @@ impl Mixer {
                     }
                 }
             },
+            AudioCommand::SetVol(v) => self.out_vol = v,
         }
     }
 
@@ -167,7 +186,7 @@ impl Mixer {
             if i == 0 { break; }
             i -= 1;
         }
-        acc
+        acc * self.out_vol
     }
 }
 

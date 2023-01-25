@@ -28,6 +28,7 @@ pub struct Knobs {
     pub cur: Knob,
     pub cdt: Knob,
     pub cdr: Knob,
+    pub hard_clip: Knob,
 
     pub aout: Knob,
 }
@@ -49,7 +50,7 @@ impl Knobs {
             cur: self.cur.curr(),
             cdt: self.cdt.curr(),
             cdr: self.cdr.curr(),
-            aout: self.aout.curr(),
+            hard_clip: self.hard_clip.curr(),
         }
     }
 }
@@ -66,14 +67,15 @@ impl Default for Knobs {
             troll: Knob::new(2.0, 1.0, 5.0, 0.001, "Exponent"),
             voices: Knob::new(2.0, 2.0, 9.0, 0.001, "Voices"),
             detune: Knob::new(0.0, 0.0, 99.0, 0.001, "Detune"),
-            aout: Knob::new(0.05, 0.0, 0.3, 0.001, "volume"),
+            aout: Knob::new(-10.0, -80.0, 20.0, 0.001, "volume"),
             base_freq: Knob::new(110.0, 20.0, 880.0, 0.001, "Base Frequency"),
 
-            amp: Knob::new(0.1, 0.0, 30.0, 0.001, "Amplitude"),
-            cut: Knob::new(0.0, 0.0, 1.0, 0.001, "up threshold"),
-            cur: Knob::new(1.0, 1.0, 4.0, 0.001, "up ratio"),
-            cdt: Knob::new(1.0, 0.0, 1.0, 0.001, "down threshold"),
-            cdr: Knob::new(1.0, 1.0, 4.0, 0.001, "down ratio"),
+            amp: Knob::new(-30.0, -60.0, 30.0, 0.001, "Amplitude"),
+            cut: Knob::new(-100.0, -100.0, 0.0, 0.001, "up threshold"),
+            cur: Knob::new(1.0, 1.0, 16.0, 0.001, "up ratio"),
+            cdt: Knob::new(0.0, -100.0, 0.0, 0.001, "down threshold"),
+            cdr: Knob::new(1.0, 1.0, 16.0, 0.001, "down ratio"),
+            hard_clip: Knob::new(0.0, -100.0, 0.0, 0.001, "hard clip db"),
             
         }
     }
@@ -259,7 +261,8 @@ impl SynthGUI {
                 outputs.canvas.put_rect(sr, 1.03, c);
                 outputs.canvas.put_triangle(r_start, r_end, r_bot, 1.03, c);
             }
-            
+
+            // Oscillator
             let r = r.child(1.0, 0.0, 1.0, 1.0);
             {
                 let r = r.dilate_pc(-0.01);
@@ -272,10 +275,27 @@ impl SynthGUI {
                     self.knobs.troll.frame(inputs, outputs, r.grid_child(0, 1, 2, 4));
                     self.knobs.detune.frame(inputs, outputs, r.grid_child(0, 2, 2, 4));
                     self.knobs.voices.frame(inputs, outputs, r.grid_child(0, 3, 2, 4));
-                    self.knobs.aout.frame(inputs, outputs, r.grid_child(1, 0, 2, 4));
                     self.knobs.base_freq.frame(inputs, outputs, r.grid_child(1, 1, 2, 4));
+                    if self.knobs.aout.frame(inputs, outputs, r.grid_child(1, 0, 2, 4)) {
+                        let com = AudioCommand::SetVol(db_to_vol(self.knobs.aout.curr()));
+                        outputs.sounds.push(com);
+                        self.local_mixer.handle_command(com);
+                    };
                 }
             }
+
+            // Compressor
+            let mut max = 0.0f32;
+            let mut i = self.rb_head;
+            for _ in 0..1024 {
+                max = max.max(self.sample_ringbuf[i].abs());
+                i = (i + self.sample_ringbuf.len() - 1) % self.sample_ringbuf.len();
+
+            }
+
+            let max_db = vol_to_db(max);
+
+
             let r = r.child(1.0, 0.0, 1.0, 1.0);
             {
                 let r = r.dilate_pc(-0.01);
@@ -289,14 +309,41 @@ impl SynthGUI {
                     self.knobs.cur.frame(inputs, outputs, r.grid_child(1, 1, 3, 4));
                     self.knobs.cdt.frame(inputs, outputs, r.grid_child(2, 0, 3, 4));
                     self.knobs.cdr.frame(inputs, outputs, r.grid_child(2, 1, 3, 4));
+                    self.knobs.hard_clip.frame(inputs, outputs, r.grid_child(1, 2, 3, 4));
+
+                    let r = r.grid_child(0, 1, 3, 4).child(0.0, 0.0, 1.0, 3.0);
+                    outputs.canvas.put_rect(r, 1.02, v4(0., 0., 0., 1.));
+                    let rh = (100.0 + max_db).max(0.0) / 100.0;
+                    let hc_db = self.knobs.hard_clip.curr();
+                    let hc_line = (100.0 + hc_db).max(0.0) / 100.0;
+                    let cu_db = self.knobs.cut.curr();
+                    let cu_line = (100.0 + cu_db).max(0.0) / 100.0;
+                    let cd_db = self.knobs.cdt.curr();
+                    let cd_line = (100.0 + cd_db).max(0.0) / 100.0;
+
+                    let hc_vol = db_to_vol(hc_db);
+
+                    println!("max: {} max db: {} rh: {}, hc db {}, hc vol {}", max, max_db, rh, hc_db, hc_vol);
+
+                    outputs.canvas.put_rect(r.child(0.4, 1.0 - rh, 0.2, rh), 1.03, v4(1., 1., 1., 1.));
+
+                    // hard clip line
+                    outputs.canvas.put_rect(r.child(0.0, 1.0 - hc_line, 1.0, 0.01), 1.03, v4(1., 0., 0., 1.));
+                    
+                    // upward line
+                    outputs.canvas.put_rect(r.child(0.0, 1.0 - cu_line, 1.0, 0.01), 1.03, v4(0., 0., 1., 1.));
+                    
+                    // downward line
+                    outputs.canvas.put_rect(r.child(0.0, 1.0 - cd_line, 1.0, 0.01), 1.03, v4(0., 1., 0., 1.));
                 }
             }
         }
         // FFT
         // how many times to pump the mixer, 44100/60 lol?
         // ive got t, is it accurate enough
-        for i in 0..44100/6 {
-            self.sample_ringbuf[self.rb_head] = self.local_mixer.tick();
+        // definitely pump it better please
+        while self.local_mixer.sample_count < (inputs.t * 44100.) as u64 {
+            self.sample_ringbuf[self.rb_head] = self.local_mixer.tick() / self.local_mixer.out_vol;
             self.rb_head = (self.rb_head + 1) % FFT_SIZE;
         }
         
