@@ -1,8 +1,15 @@
 use crate::audio::*;
 use crate::kapp::*;
 use crate::kmath::*;
+use crate::texture_buffer::TextureBuffer;
 use crate::widgets::*;
+
 use std::collections::HashMap;
+
+use rustfft::num_complex::ComplexFloat;
+use rustfft::{FftPlanner, num_complex::Complex};
+
+const FFT_SIZE: usize = 8192;
 
 pub struct VSliders {
         n: FloatSlider,
@@ -144,7 +151,11 @@ pub struct SynthGUI {
     history: Vec<(usize, f32, f32)>,
 
     held_keys: HashMap<u32, (usize, f32, SoundDesc)>,
-    times_pressed: [u32; 28],
+    times_pressed: HashMap<VirtualKeyCode, u32>,
+
+    local_mixer: Mixer,
+    sample_ringbuf: [f32; FFT_SIZE],
+    rb_head: usize,
 }
 
 impl Default for SynthGUI {
@@ -154,7 +165,10 @@ impl Default for SynthGUI {
             sliders: VSliders::default(),
             history: Vec::new(),
             held_keys: HashMap::new(),
-            times_pressed: [0; 28],
+            times_pressed: HashMap::new(),
+            local_mixer: Mixer::default(),
+            sample_ringbuf: [0.0; FFT_SIZE],
+            rb_head: 0,
         }
     }
 }
@@ -168,7 +182,10 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
         VirtualKeyCode::B => Some(4),
         VirtualKeyCode::N => Some(5),
         VirtualKeyCode::M => Some(6),
+        VirtualKeyCode::Comma => Some(7),
+        VirtualKeyCode::Period => Some(8),
 
+        VirtualKeyCode::Capital => Some(6),
         VirtualKeyCode::A => Some(7),
         VirtualKeyCode::S => Some(8),
         VirtualKeyCode::D => Some(9),
@@ -176,7 +193,12 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
         VirtualKeyCode::G => Some(11),
         VirtualKeyCode::H => Some(12),
         VirtualKeyCode::J => Some(13),
+        VirtualKeyCode::K => Some(14),
+        VirtualKeyCode::L => Some(15),
+        VirtualKeyCode::Semicolon => Some(16),
+        VirtualKeyCode::Apostrophe => Some(17),
 
+        VirtualKeyCode::Tab => Some(13),
         VirtualKeyCode::Q => Some(14),
         VirtualKeyCode::W => Some(15),
         VirtualKeyCode::E => Some(16),
@@ -184,7 +206,13 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
         VirtualKeyCode::T => Some(18),
         VirtualKeyCode::Y => Some(19),
         VirtualKeyCode::U => Some(20),
+        VirtualKeyCode::I => Some(21),
+        VirtualKeyCode::O => Some(22),
+        VirtualKeyCode::P => Some(23),
+        VirtualKeyCode::LBracket => Some(24),
+        VirtualKeyCode::RBracket => Some(25),
 
+        VirtualKeyCode::Escape => Some(20),
         VirtualKeyCode::Key1 => Some(21),
         VirtualKeyCode::Key2 => Some(22),
         VirtualKeyCode::Key3 => Some(23),
@@ -199,33 +227,37 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
 
 impl SynthGUI {
     pub fn frame(&mut self, inputs: &FrameInputState, outputs: &mut FrameOutputs) {
-        let w = 15;
-
         // key presses
         let pressed_keys = inputs.curr_keys.difference(&inputs.prev_keys);
         for k in pressed_keys {
             if let Some(note) = kc_to_note(*k) {
-                self.times_pressed[note] += 1;
-                let uid = (31249577 + self.times_pressed[note]) * khash(12312577 * note as u32);
+                let uid = (31249577 + self.times_pressed.get(k).unwrap_or(&0)) * khash(12312577 * note as u32);
                 let f = 110.0 * 2.0f32.powf(note as f32/12.0);
                 let sd = self.knobs.get_sd(f);
                 self.held_keys.insert(uid, (note, inputs.t, sd));
+
+                let com = AudioCommand::PlayHold(uid as u64, sd);
+                self.local_mixer.handle_command(com);
                 outputs.sounds.push(
-                    AudioCommand::PlayHold(uid as u64, sd)
+                    com,
                 )
             }
         }
         let released_keys = inputs.prev_keys.difference(&inputs.curr_keys);
         for k in released_keys {
             if let Some(note) = kc_to_note(*k) {
-                let uid = (31249577 + self.times_pressed[note]) * khash(12312577 * note as u32);
+                let uid = (31249577 + self.times_pressed.get(k).unwrap_or(&0)) * khash(12312577 * note as u32);
                 if let Some((_note, t_start, _sd)) = self.held_keys.remove(&uid) {
                     let t_end = inputs.t as f32;
                     self.history.push((note, t_start, t_end));
+                    let com = AudioCommand::Release(uid as u64);
+                    self.local_mixer.handle_command(com);
                     outputs.sounds.push(
-                        AudioCommand::Release(uid as u64)
+                        com,
                     )
                 }
+                self.times_pressed.insert(*k, *self.times_pressed.get(k).unwrap_or(&0) + 1);
+
             }
         }
 
@@ -234,7 +266,6 @@ impl SynthGUI {
 
         {
             let w_envelope = 0.3333;
-            let w_osc = 0.3333;
 
             // top
             let r = r.grid_child(0, 0, 1, 3);
@@ -254,6 +285,46 @@ impl SynthGUI {
                     self.knobs.s.frame(inputs, outputs, r.grid_child(0, 2, 1, 4));
                     self.knobs.r.frame(inputs, outputs, r.grid_child(0, 3, 1, 4));
                 }
+            }
+            {
+                // adsr visualizer
+                let r = r.dilate_pc(-0.01);
+                let r = r.child(0.0, 0.1, 1.0, 0.9);
+                let r = r.child(0.2, 0.0, 0.8, 1.0);
+                let r = r.dilate_pc(-0.03);
+                outputs.canvas.put_rect(r, 1.02, v4(0., 0., 0., 1.));
+                
+                let a = self.knobs.a.curr();
+                let d = self.knobs.d.curr();
+                let s = 1.0 - self.knobs.s.curr();
+                let sustime = 0.7;
+                let rel = self.knobs.r.curr();
+
+                let tot = a+d+sustime+rel;
+
+                let tot = tot.max(4.0);
+                
+                let a_start = r.bl();
+                let a_top = v2(r.x + r.w * a/tot, r.y);
+                let a_bot = v2(a_top.x, a_start.y);
+                
+                let d_start = a_top;
+                let d_bot = a_bot;
+                let d_end = v2(d_start.x + d/tot * r.w, r.y + s*r.h);
+                let d_bot2 = v2(d_end.x, d_bot.y);
+                
+                let sr = Rect::new(d_end.x, d_end.y, (sustime/tot) * r.w, r.h - s * r.h);
+                
+                let r_start = sr.tr();
+                let r_bot = sr.br();
+                let r_end = v2(r_bot.x + rel/tot * r.w, r_bot.y);
+                
+                let c = v4(1., 1., 1., 1.);
+                outputs.canvas.put_triangle(a_start, a_top, a_bot, 1.03, c);
+                outputs.canvas.put_triangle(d_start, d_bot, d_end, 1.03, c);
+                outputs.canvas.put_triangle(d_bot, d_end, d_bot2, 1.03, c);
+                outputs.canvas.put_rect(sr, 1.03, c);
+                outputs.canvas.put_triangle(r_start, r_end, r_bot, 1.03, c);
             }
             
             let r = r.child(1.0, 0.0, 1.0, 1.0);
@@ -286,29 +357,51 @@ impl SynthGUI {
                     self.knobs.cdr.frame(inputs, outputs, r.grid_child(2, 1, 3, 4));
                 }
             }
-
-            // self.sliders.n.frame(inputs, outputs,    r.grid_child(0, 0, w, 1));
-            // self.sliders.troll.frame(inputs, outputs,   r.grid_child(1, 0, w, 1));
-            // self.sliders.ea.frame(inputs, outputs,   r.grid_child(2, 0, w, 1));
-            // self.sliders.ed.frame(inputs, outputs,   r.grid_child(3, 0, w, 1));
-            // self.sliders.es.frame(inputs, outputs,   r.grid_child(4, 0, w, 1));
-            // self.sliders.er.frame(inputs, outputs,   r.grid_child(5, 0, w, 1));
-            // self.sliders.detune.frame(inputs, outputs,   r.grid_child(6, 0, w, 1));
-            // self.sliders.voices.frame(inputs, outputs,   r.grid_child(7, 0, w, 1));
-            // self.sliders.amp.frame(inputs, outputs,   r.grid_child(8, 0, w, 1));
-            // self.sliders.cur.frame(inputs, outputs,   r.grid_child(10, 0, w, 1));
-            // self.sliders.cut.frame(inputs, outputs,   r.grid_child(11, 0, w, 1));
-            // self.sliders.cdr.frame(inputs, outputs,   r.grid_child(12, 0, w, 1));
-            // self.sliders.cdt.frame(inputs, outputs,   r.grid_child(13, 0, w, 1));
-            // self.sliders.aout.frame(inputs, outputs,   r.grid_child(14, 0, w, 1));
         }
+        // FFT
+        // how many times to pump the mixer, 44100/60 lol?
+        // ive got t, is it accurate enough
+        for i in 0..44100/6 {
+            self.sample_ringbuf[self.rb_head] = self.local_mixer.tick();
+            self.rb_head = (self.rb_head + 1) % FFT_SIZE;
+        }
+        
+        let mut planner = FftPlanner::new();
+        let mut buf = [Complex{re: 0.0, im: 0.0}; FFT_SIZE];
+        for i in 0..FFT_SIZE {
+            let x = self.sample_ringbuf[(self.rb_head + i) % FFT_SIZE] * blackman(i, FFT_SIZE);
+            buf[i] = Complex{re: x, im: 0.0};
+        }
+        let fft = planner.plan_fft_forward(FFT_SIZE);
+        fft.process(&mut buf);
 
-        // {
-        //     // mid
-        //     let r = r.grid_child(0, 1, 1, 3);
-        //     let r = r.dilate_pc(-0.01);
-        //     outputs.canvas.put_rect(r, 1.01, Vec4::new(0.0, 0.8, 0.4, 1.0));
-        // }
+        // now display it
+        let fft_display_w = FFT_SIZE/8;
+        let fft_height = 64;
+        let mut tb = TextureBuffer::new(fft_display_w, fft_height);
+        for i in 0..fft_display_w {
+            let h = -vol_to_db(buf[i].re / FFT_SIZE as f32) / 100.0;
+            // let h = -2.0-vol_to_db(buf[i].abs()/buf.len() as f32) / 100.0;
+
+            for j in 0..fft_height {
+                if (h * fft_height as f32) < j as f32 {
+                    tb.set(i as i32, (fft_height - j - 1) as i32, v4(1., 1., 1., 1.))
+                } else {
+                    tb.set(i as i32, (fft_height - j - 1) as i32, v4(0., 0., 0., 1.))
+                }
+            }
+        }
+        
+
+
+        {
+            // mid
+            let r = r.grid_child(0, 1, 1, 3);
+            let r = r.dilate_pc(-0.01);
+            outputs.set_texture.push((tb, 0));
+            outputs.draw_texture.push((r, 0));
+            // outputs.canvas.put_rect(r, 1.01, Vec4::new(0.0, 0.8, 0.4, 1.0));
+        }
 
         {
             // bot
@@ -346,4 +439,12 @@ impl SynthGUI {
             }
         }
     }
+}
+
+pub fn blackman(n: usize, N: usize) -> f32 {
+    let a0 = 0.42;
+    let a1 = 0.5;
+    let a2 = 0.08;
+
+    a0 - a1 * (2.0*PI*n as f32/N as f32).cos() + a2 * (4.0*PI*n as f32/N as f32).cos()
 }

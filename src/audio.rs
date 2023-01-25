@@ -131,7 +131,7 @@ impl Mixer {
                     id,
                     age: 0,
                     birth: self.sample_count,
-                    phases: vec![0.0; voices_len*n_len], // todo preallocate max phases for detune
+                    phases: vec![0.0; voices_len*n_len],
                     release_time: None,
                 })
             },

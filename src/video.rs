@@ -70,12 +70,12 @@ impl Video {
             self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
             self.gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT); 
 
+            self.simple_renderer.render(&self.gl, &outputs.canvas);
+            
+            self.gl.clear(glow::DEPTH_BUFFER_BIT); 
             for (r, idx) in &outputs.draw_texture {
                 self.texture_renderer.render(&self.gl, *r, a, *idx);
             }
-
-            self.gl.clear(glow::DEPTH_BUFFER_BIT); 
-            self.simple_renderer.render(&self.gl, &outputs.canvas);
 
             let font_ct_canvas = glyph_buffer_to_canvas(&outputs.glyphs, a);
             self.ct_renderer.render(&self.gl, &font_ct_canvas);

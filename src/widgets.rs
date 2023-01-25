@@ -157,8 +157,12 @@ impl Knob {
             }
         }
 
-        outputs.canvas.put_semicircle(r.centroid(), r.w/2.0, 1.1, c_track);
-        outputs.canvas.put_semicircle(r.centroid(), r.w/2.0 * r_inner, 1.2, c_bg);
+        // outputs.canvas.put_semicircle(r.centroid(), r.w/2.0, 1.1, c_track);
+        // outputs.canvas.put_semicircle(r.centroid(), r.w/2.0 * r_inner, 1.2, c_bg);
+        let r1 = Rect::new_centered(r.x ,r.centroid().y, r.w * 0.1, r.h * 0.02);
+        let r2 = Rect::new_centered(r.right() ,r.centroid().y, r.w * 0.1, r.h * 0.02);
+        outputs.canvas.put_rect(r1, 1.29, v4(0.3, 0.3, 0.3, 1.));
+        outputs.canvas.put_rect(r2, 1.29, v4(0.3, 0.3, 0.3, 1.));
         outputs.canvas.put_circle(r.centroid(), r.w/2.0 * r_knob, 1.3, c_knob);
 
         let v = -Vec2::new_r_theta(r.w/2.0, self.t * PI);
