@@ -10,6 +10,7 @@ use rustfft::num_complex::ComplexFloat;
 use rustfft::{FftPlanner, num_complex::Complex};
 
 const FFT_SIZE: usize = 8192;
+const NUM_NOTES: usize = 34;
 
 pub struct Knobs {
     pub a: Knob,
@@ -119,6 +120,8 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
         VirtualKeyCode::M => Some(6),
         VirtualKeyCode::Comma => Some(7),
         VirtualKeyCode::Period => Some(8),
+        VirtualKeyCode::Slash => Some(9),
+        VirtualKeyCode::RShift => Some(10),
 
         VirtualKeyCode::Capital => Some(6),
         VirtualKeyCode::A => Some(7),
@@ -132,6 +135,7 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
         VirtualKeyCode::L => Some(15),
         VirtualKeyCode::Semicolon => Some(16),
         VirtualKeyCode::Apostrophe => Some(17),
+        VirtualKeyCode::Return => Some(18),
 
         VirtualKeyCode::Tab => Some(13),
         VirtualKeyCode::Q => Some(14),
@@ -146,6 +150,7 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
         VirtualKeyCode::P => Some(23),
         VirtualKeyCode::LBracket => Some(24),
         VirtualKeyCode::RBracket => Some(25),
+        VirtualKeyCode::Backslash => Some(26),
 
         VirtualKeyCode::Escape => Some(20),
         VirtualKeyCode::Key1 => Some(21),
@@ -155,6 +160,13 @@ fn kc_to_note(kc: VirtualKeyCode) -> Option<usize> {
         VirtualKeyCode::Key5 => Some(25),
         VirtualKeyCode::Key6 => Some(26),
         VirtualKeyCode::Key7 => Some(27),
+
+        VirtualKeyCode::Key8 => Some(28),
+        VirtualKeyCode::Key9 => Some(29),
+        VirtualKeyCode::Key0 => Some(30),
+        VirtualKeyCode::Minus => Some(31),
+        VirtualKeyCode::Equals => Some(32),
+        VirtualKeyCode::Back => Some(33),
 
         _ => None,
     }
@@ -386,16 +398,16 @@ impl SynthGUI {
             // bot
             let r = r.grid_child(0, 2, 1, 3);
             let r = r.dilate_pc(-0.01);
-            outputs.canvas.put_rect(r, 1.01, Vec4::new(0.0, 0.4, 0.8, 1.0));
+            outputs.canvas.put_rect(r, 1.01, v4(0., 0., 0., 1.));
 
             // draw history notes
             for &(note, start, end) in self.history.iter() {
                 if end > inputs.t as f32 - 10.0 {
-                    let r = r.grid_child(0, 27 - note as i32, 1, 28);
+                    let r = r.grid_child(0, (NUM_NOTES - 1 - note) as i32, 1, NUM_NOTES as i32);
                     let r = r.child(1.0 - (inputs.t as f32 - start) / 10.0, 0.0, (end - start) / 10.0, 1.0);
 
-                    let h = 90.0 * (note / 7) as f32;
-                    let s = 1.0 - (note % 7) as f32 / 12.0;
+                    let h = 72.0 * (note / 7) as f32;
+                    let s = 1.0 - (note % 7) as f32 / 8.0;
                     let v = 1.0;
 
                     let c = Vec4::new(h, s, v, 1.0).hsv_to_rgb();
@@ -405,12 +417,12 @@ impl SynthGUI {
 
             // draw held notes
             for &(note, start, _sd) in self.held_keys.values() {
-                let r = r.grid_child(0, 27 - note as i32, 1, 28);
+                let r = r.grid_child(0, (NUM_NOTES - 1 - note) as i32, 1, NUM_NOTES as i32);
                 let end = inputs.t;
                 let r = r.child(1.0 - (inputs.t as f32 - start) / 10.0, 0.0, (end-start) / 10.0, 1.0);
 
-                let h = 90.0 * (note / 7) as f32;
-                let s = 1.0 - (note % 7) as f32 / 12.0;
+                let h = 72.0 * (note / 7) as f32;
+                let s = 1.0 - (note % 7) as f32 / 8.0;
                 let v = 1.0;
 
                 let c = Vec4::new(h, s, v, 1.0).hsv_to_rgb();

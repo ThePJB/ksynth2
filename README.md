@@ -22,3 +22,5 @@ i think if i want global volume its got to be global volume
 
 update while turn knobs would be good please
 updatesd(id), yea i can do that boss
+
+add rest of notes ay
