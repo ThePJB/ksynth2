@@ -11,71 +11,27 @@ use rustfft::{FftPlanner, num_complex::Complex};
 
 const FFT_SIZE: usize = 8192;
 
-pub struct VSliders {
-        n: FloatSlider,
-        troll: FloatSlider,
-        ea: FloatSlider,
-        ed: FloatSlider,
-        es: FloatSlider,
-        er: FloatSlider,
-        detune: FloatSlider,
-        voices: FloatSlider,
-        amp: FloatSlider,
-        cut: FloatSlider,
-        cur: FloatSlider,
-        cdt: FloatSlider,
-        cdr: FloatSlider,
-        aout: FloatSlider,
+pub struct Knobs {
+    pub a: Knob,
+    pub d: Knob,
+    pub s: Knob,
+    pub r: Knob,
+    
+    pub n: Knob,
+    pub troll: Knob,
+    pub detune: Knob,
+    pub voices: Knob,
+    pub base_freq: Knob,
+    
+    pub amp: Knob,
+    pub cut: Knob,
+    pub cur: Knob,
+    pub cdt: Knob,
+    pub cdr: Knob,
+
+    pub aout: Knob,
 }
 
-impl Default for VSliders {
-    fn default() -> Self {
-        VSliders {
-            n: FloatSlider::new(1.0, 1.0, 30.0, "NHARM".to_owned()),
-            troll: FloatSlider::new(1.0, 1.0, 4.0, "TROLL".to_owned()),
-
-            ea: FloatSlider::new(0.1, 0.0, 3.0, "ATTACK".to_owned()),
-            ed: FloatSlider::new(0.1, 0.0, 3.0, "DECAY".to_owned()),
-            es: FloatSlider::new(0.5, 0.0, 1.0, "SUSTAIN".to_owned()),
-            er: FloatSlider::new(0.1, 0.0, 3.0, "RELEASE".to_owned()),
-
-            detune: FloatSlider::new(0.0, 0.0, 99.0, "DETUNE".to_owned()),
-            voices: FloatSlider::new(1.0, 1.0, 8.0, "VOICES".to_owned()),
-
-            amp: FloatSlider::new(-20.0, -30.0, 10.0, "AMP-PRE".to_owned()),
-            
-            cut: FloatSlider::new(-100.0, -100.0, 10.0, "C-UP-T".to_owned()),
-            cur: FloatSlider::new(1.0, 1.0, 8.0, "C-UP-R".to_owned()),
-            
-            cdt: FloatSlider::new(0.0, -30.0, 20.0, "C-DOWN-T".to_owned()),
-            cdr: FloatSlider::new(1.0, 1.0, 8.0, "C-DOWN-R".to_owned()),
-
-            aout: FloatSlider::new(-20.0, -30.0, 10.0, "AMP-OUT".to_owned()),
-        }
-    }
-}
-
-impl VSliders {
-    fn get_sd(&self, f: f32) -> SoundDesc {
-        SoundDesc {
-            f,
-            n: self.n.curr(),
-            troll: self.troll.curr(),
-            ea: self.ea.curr(),
-            ed: self.ed.curr(),
-            es: self.es.curr(),
-            er: self.er.curr(),
-            detune: self.detune.curr(),
-            voices: self.voices.curr(),
-            amp: self.amp.curr(),
-            cut: self.cut.curr(),
-            cur: self.cur.curr(),
-            cdt: self.cdt.curr(),
-            cdr: self.cdr.curr(),
-            aout: self.aout.curr(),
-        }
-    }
-}
 impl Knobs {
     fn get_sd(&self, f: f32) -> SoundDesc {
         SoundDesc {
@@ -98,28 +54,6 @@ impl Knobs {
     }
 }
 
-pub struct Knobs {
-    pub a: Knob,
-    pub d: Knob,
-    pub s: Knob,
-    pub r: Knob,
-    
-    pub n: Knob,
-    pub troll: Knob,
-    pub detune: Knob,
-    pub voices: Knob,
-    
-    pub amp: Knob,
-    pub cut: Knob,
-    pub cur: Knob,
-    pub cdt: Knob,
-    pub cdr: Knob,
-
-    pub aout: Knob,
-}
-
-// compressor needs do upward, do downward
-
 impl Default for Knobs {
     fn default() -> Self {
         Knobs {
@@ -133,7 +67,8 @@ impl Default for Knobs {
             voices: Knob::new(2.0, 2.0, 9.0, 0.001, "Voices"),
             detune: Knob::new(0.0, 0.0, 99.0, 0.001, "Detune"),
             aout: Knob::new(0.05, 0.0, 0.3, 0.001, "volume"),
-            
+            base_freq: Knob::new(110.0, 20.0, 880.0, 0.001, "Base Frequency"),
+
             amp: Knob::new(0.1, 0.0, 30.0, 0.001, "Amplitude"),
             cut: Knob::new(0.0, 0.0, 1.0, 0.001, "up threshold"),
             cur: Knob::new(1.0, 1.0, 4.0, 0.001, "up ratio"),
@@ -145,7 +80,6 @@ impl Default for Knobs {
 }
 
 pub struct SynthGUI {
-    sliders: VSliders,
     knobs: Knobs,
 
     history: Vec<(usize, f32, f32)>,
@@ -162,7 +96,6 @@ impl Default for SynthGUI {
     fn default() -> Self {
         SynthGUI {
             knobs: Knobs::default(),
-            sliders: VSliders::default(),
             history: Vec::new(),
             held_keys: HashMap::new(),
             times_pressed: HashMap::new(),
@@ -232,7 +165,7 @@ impl SynthGUI {
         for k in pressed_keys {
             if let Some(note) = kc_to_note(*k) {
                 let uid = (31249577 + self.times_pressed.get(k).unwrap_or(&0)) * khash(12312577 * note as u32);
-                let f = 110.0 * 2.0f32.powf(note as f32/12.0);
+                let f = self.knobs.base_freq.curr() * 2.0f32.powf(note as f32/12.0);
                 let sd = self.knobs.get_sd(f);
                 self.held_keys.insert(uid, (note, inputs.t, sd));
 
@@ -340,6 +273,7 @@ impl SynthGUI {
                     self.knobs.detune.frame(inputs, outputs, r.grid_child(0, 2, 2, 4));
                     self.knobs.voices.frame(inputs, outputs, r.grid_child(0, 3, 2, 4));
                     self.knobs.aout.frame(inputs, outputs, r.grid_child(1, 0, 2, 4));
+                    self.knobs.base_freq.frame(inputs, outputs, r.grid_child(1, 1, 2, 4));
                 }
             }
             let r = r.child(1.0, 0.0, 1.0, 1.0);
