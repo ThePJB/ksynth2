@@ -104,6 +104,27 @@ impl ImageBufferA {
         self.pixels[y*self.w + x]
     }
     
+    pub fn new_from_bytes(bytes: &[u8]) -> Option<ImageBufferA> {
+        let decoder = png::Decoder::new(bytes);
+        let mut reader = decoder.read_info().unwrap();
+        // Allocate the output buffer.
+        let mut buf = vec![0; reader.output_buffer_size()];
+        // Read the next frame. An APNG might contain multiple frames.
+        let info = reader.next_frame(&mut buf).unwrap();
+        // Grab the bytes of the image.
+        let bytes = &buf[..info.buffer_size()];
+        let mut bytes_idx = 0;
+        // extra copy whatever idgaf
+        let mut image_buffer = ImageBufferA::new(info.width as usize, info.height as usize);
+        for j in 0..image_buffer.h {
+            for i in 0..image_buffer.w {
+                image_buffer.set_px(i, j, (bytes[bytes_idx], bytes[bytes_idx + 1], bytes[bytes_idx + 2], bytes[bytes_idx + 3]));
+                bytes_idx += 4;
+            }
+        }
+        Some(image_buffer)
+    }
+    
     pub fn new_from_file(path_str: &str) -> Option<ImageBufferA> {
         let result_file = File::open(path_str);
         if result_file.is_err() {return None};

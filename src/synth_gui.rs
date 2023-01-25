@@ -65,7 +65,7 @@ impl Default for Knobs {
 
             n: Knob::new(3.0, 1.0, 20.0, 0.001, "Num Harmonics"),
             troll: Knob::new(2.0, 1.0, 5.0, 0.001, "Exponent"),
-            voices: Knob::new(2.0, 2.0, 9.0, 0.001, "Voices"),
+            voices: Knob::new(1.0, 1.0, 9.0, 0.001, "Voices"),
             detune: Knob::new(0.0, 0.0, 99.0, 0.001, "Detune"),
             aout: Knob::new(-10.0, -80.0, 20.0, 0.001, "volume"),
             base_freq: Knob::new(110.0, 20.0, 880.0, 0.001, "Base Frequency"),
@@ -322,8 +322,6 @@ impl SynthGUI {
                     let cd_line = (100.0 + cd_db).max(0.0) / 100.0;
 
                     let hc_vol = db_to_vol(hc_db);
-
-                    println!("max: {} max db: {} rh: {}, hc db {}, hc vol {}", max, max_db, rh, hc_db, hc_vol);
 
                     outputs.canvas.put_rect(r.child(0.4, 1.0 - rh, 0.2, rh), 1.03, v4(1., 1., 1., 1.));
 

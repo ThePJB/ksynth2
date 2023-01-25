@@ -58,7 +58,6 @@ impl Channel {
 
         let voices_len = sd.voices.floor() as usize;
         let n_len = sd.n.floor() as usize;
-        self.phases.resize(voices_len*n_len, 0.0);  // or resize with random phases, is better  // uh y
 
         // pre compression
         let mut acc = 0.0;
@@ -142,14 +141,21 @@ impl Mixer {
 
         match com {
             AudioCommand::PlayHold(id, sd) => {
+                let seed = khash(self.sample_count as u32);
+                let mut phases = vec![];
                 let voices_len = sd.voices.floor() as usize;
                 let n_len = sd.n.floor() as usize;
+                for i in 0..voices_len {
+                    for j in 0..n_len {
+                        phases.push(krand(seed + 13414177 * i as u32 + 123997 * j as u32) * 2.0 * PI)
+                    }
+                }
                 self.channels.push(Channel {
                     sd,
                     id,
                     age: 0,
                     birth: self.sample_count,
-                    phases: vec![0.0; voices_len*n_len],
+                    phases,
                     release_time: None,
                 })
             },

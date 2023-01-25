@@ -13,7 +13,7 @@ pub struct CTRenderer {
 }
 
 impl CTRenderer {
-    pub fn new(gl: &glow::Context, tex_path: &str) -> CTRenderer {
+    pub fn new(gl: &glow::Context, tex_buffer: ImageBufferA) -> CTRenderer {
         unsafe {
             let vbo = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
@@ -93,7 +93,6 @@ impl CTRenderer {
             gl.delete_shader(vs);
 
             // better make and load the texture
-            let tex_buffer = ImageBufferA::new_from_file(tex_path).unwrap();
             let texture = gl.create_texture().unwrap();
             gl.bind_texture(glow::TEXTURE_2D, Some(texture));
             gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA as i32, tex_buffer.w as i32, tex_buffer.h as i32, 0, RGBA, glow::UNSIGNED_BYTE, Some(&tex_buffer.bytes()));
