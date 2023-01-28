@@ -135,7 +135,7 @@ impl Application {
     
         let video = Video::new("ksynth2", xres as f32, yres as f32, event_loop);
 
-        let rb = RingBuffer::<AudioCommand>::new(5);
+        let rb = RingBuffer::<AudioCommand>::new(64);
         let (mut prod, mut cons) = rb.split();
         
         let app = Application {
@@ -225,7 +225,7 @@ impl Application {
                     ..
                 } => {
                     if self.plant_cursor {
-                        self.video.window.window().set_cursor_position(self.old_mouse_pos).unwrap();
+                        self.video.window.window().set_cursor_position(self.old_mouse_pos).unwrap_or(());
                     } else {
                         self.old_mouse_pos = pos.to_logical(self.video.window.window().scale_factor());
                         self.instant_mouse_pos = Vec2::new(pos.x as f32 / self.video.yres, pos.y as f32 / self.video.yres);
