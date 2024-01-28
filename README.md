@@ -24,3 +24,10 @@ update while turn knobs would be good please
 updatesd(id), yea i can do that boss
 
 add rest of notes ay
+
+i think the fft is why it takes so long to compile
+
+
+it would be good to put the envelope with each frequency thing
+or maybe just adsr lo, adsr hi, and it interpolates
+but hi refers to what, highest possible harmonic or highest present harmonic?
